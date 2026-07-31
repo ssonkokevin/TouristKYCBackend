@@ -1,0 +1,289 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum ResourceStatus {
+  available
+  reserved
+  provisioned
+  assigned
+  active
+  suspended
+  deactivated
+  quarantined
+}
+
+enum MsisdnStatus {
+  available
+  reserved
+  provisioned
+  assigned
+  active
+  suspended
+  deactivated
+}
+
+enum SubscriberStatus {
+  active
+  suspended
+  deregistered
+}
+
+enum VisitPurpose {
+  tourism
+  business
+  study
+  transit
+  medical
+  other
+}
+
+enum SuspensionReason {
+  visa_expired
+  manual_review
+  fraud_suspected
+  payment_issue
+  other
+}
+
+enum DeregistrationReason {
+  visa_expired_deregistered
+  lost_card
+  change_of_number
+  customer_not_interested
+  voluntary_deregistration
+  fraud_suspected
+  other
+}
+
+enum NotificationType {
+  visa_expiring_soon
+  visa_expired_suspended
+  provider_sync_failed
+  sim_pool_low
+}
+
+enum SyncDirection {
+  inbound
+  outbound
+}
+
+enum SyncStatus {
+  pending
+  success
+  failed
+  timeout
+}
+
+// ─── Tables ──────────────────────────────────────────────────────────────────
+
+model SimInventory {
+  id                     String         @id @default(uuid()) @db.Uuid
+  imsi                   String         @unique @db.VarChar(15)
+  iccid                  String         @unique @db.VarChar(20)
+  type                   String         @default("esim") @db.VarChar(20)
+  category               String         @default("tourist") @db.VarChar(50)
+  batchId                String?        @map("batch_id") @db.VarChar(50)
+  status                 ResourceStatus @default(available)
+  reservedBy             String?        @map("reserved_by") @db.VarChar(100)
+  reservedAt             DateTime?      @map("reserved_at")
+  reservationExpiresAt   DateTime?      @map("reservation_expires_at")
+  provisionedAt          DateTime?      @map("provisioned_at")
+  providerConfirmationRef String?      @map("provider_confirmation_ref") @db.VarChar(100)
+  notes                  String?        @db.Text
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  subscriber      Subscriber?     @relation("SimInventorySubscriber")
+  msisdnPool      MsisdnPool?     @relation("SimInventoryMsisdn")
+  providerSyncLog ProviderSyncLog[]
+
+  @@index([status])
+  @@index([batchId])
+  @@map("sim_inventory")
+}
+
+model MsisdnPool {
+  id                   String       @id @default(uuid()) @db.Uuid
+  msisdn               String       @unique @db.VarChar(15)
+  category             String       @default("tourist") @db.VarChar(50)
+  status               MsisdnStatus @default(available)
+  reservedBy           String?      @map("reserved_by") @db.VarChar(100)
+  reservedAt           DateTime?      @map("reserved_at")
+  reservationExpiresAt DateTime?      @map("reservation_expires_at")
+  provisionedAt        DateTime?      @map("provisioned_at")
+  providerConfirmationRef String?   @map("provider_confirmation_ref") @db.VarChar(100)
+  simInventoryId       String?      @unique @map("sim_inventory_id") @db.Uuid
+  assignedSubscriberId String?      @map("assigned_subscriber_id") @db.Uuid
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  simInventory SimInventory? @relation("SimInventoryMsisdn", fields: [simInventoryId], references: [id])
+  subscriber   Subscriber?   @relation("MsisdnSubscriber", fields: [assignedSubscriberId], references: [id])
+
+  @@index([status])
+  @@index([assignedSubscriberId])
+  @@map("msisdn_pool")
+}
+
+model Nationality {
+  code      String  @id @db.Char(2)
+  code3     String? @db.Char(3)
+  name      String
+  flagEmoji String? @map("flag_emoji") @db.VarChar(8)
+  region    String? @db.VarChar(50)
+
+  subscribers Subscriber[]
+
+  @@map("nationalities")
+}
+
+model Subscriber {
+  id                  String           @id @default(uuid()) @db.Uuid
+
+  // Personal info
+  surname             String           @db.VarChar(100)
+  otherNames          String           @map("other_names") @db.VarChar(150)
+  gender              String?          @db.VarChar(10)
+  dateOfBirth         DateTime?        @map("date_of_birth") @db.Date
+  nationalityCode     String           @map("nationality_code") @db.Char(2)
+  idType              String?          @map("id_type") @db.VarChar(20)
+  passportNumber      String           @map("passport_number") @db.VarChar(50)
+  passportIssueDate   DateTime?        @map("passport_issue_date") @db.Date
+  passportExpiry      DateTime?        @map("passport_expiry") @db.Date
+
+  // Visa info
+  visaType            String?          @map("visa_type") @db.VarChar(50)
+  visaNumber          String?          @map("visa_number") @db.VarChar(50)
+  visaIssueDate       DateTime?        @map("visa_issue_date") @db.Date
+  visaExpiryDate      DateTime         @map("visa_expiry_date") @db.Date
+  purposeOfVisit      VisitPurpose?    @map("purpose_of_visit")
+  entryPoint          String?          @map("entry_point") @db.VarChar(100)
+  arrivalDate         DateTime?        @map("arrival_date") @db.Date
+  intendedDurationDays Int?             @map("intended_duration_days")
+  accommodation       String?          @db.VarChar(150)
+
+  // Resources
+  simInventoryId      String?          @unique @map("sim_inventory_id") @db.Uuid
+  msisdnId            String?          @map("msisdn_id") @db.Uuid
+
+  // Document URLs
+  subscriberPhotoUrl  String?          @map("subscriber_photo_url") @db.VarChar(500)
+  passportBioPageUrl  String?          @map("passport_bio_page_url") @db.VarChar(500)
+  visaPageUrl         String?          @map("visa_page_url") @db.VarChar(500)
+  applicationFormUrl  String?          @map("application_form_url") @db.VarChar(500)
+
+  // Status
+  status              SubscriberStatus @default(active)
+
+  // Agent / registration
+  registrationType    String?          @map("registration_type") @db.VarChar(50)
+  agentId             String?          @map("agent_id") @db.VarChar(100)
+  agentNumber         String?          @map("agent_number") @db.VarChar(50)
+  agentName           String?          @map("agent_name") @db.VarChar(150)
+  registrationBooth   String?          @map("registration_booth") @db.VarChar(20)
+  registeredBy        String?          @map("registered_by") @db.VarChar(100)
+  registeredAt        DateTime         @default(now()) @map("registered_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  nationality         Nationality      @relation(fields: [nationalityCode], references: [code])
+  simInventory        SimInventory?    @relation("SimInventorySubscriber", fields: [simInventoryId], references: [id])
+  msisdnPool          MsisdnPool[]     @relation("MsisdnSubscriber")
+  suspension          Suspension?
+  deregistration      Deregistration?
+  notifications       Notification[]
+  providerSyncLog     ProviderSyncLog[]
+
+  @@index([nationalityCode])
+  @@index([visaExpiryDate])
+  @@index([status])
+  @@index([registeredAt])
+  @@index([passportNumber])
+  @@index([simInventoryId])
+  @@index([agentId])
+  @@map("subscribers")
+}
+
+// State table — one row per currently-suspended subscriber only.
+model Suspension {
+  subscriberId  String           @id @db.Uuid
+  reason        SuspensionReason
+  reasonNote    String?          @map("reason_note") @db.Text
+  suspendedBy   String           @map("suspended_by") @db.VarChar(100)
+  suspendedAt   DateTime         @default(now()) @map("suspended_at")
+
+  subscriber    Subscriber       @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+
+  @@map("suspensions")
+}
+
+// State table — one row per currently-deregistered subscriber only.
+model Deregistration {
+  subscriberId    String                @id @db.Uuid
+  reason          DeregistrationReason
+  reasonNote      String?               @map("reason_note") @db.Text
+  operator        String                @db.VarChar(100)
+  deregisteredAt  DateTime              @default(now()) @map("deregistered_at")
+
+  subscriber      Subscriber            @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+
+  @@map("deregistrations")
+}
+
+model Notification {
+  id           String           @id @default(uuid()) @db.Uuid
+  type         NotificationType
+  subscriberId String?          @map("subscriber_id") @db.Uuid
+  title        String           @db.VarChar(200)
+  body         String?          @db.Text
+  isRead       Boolean          @default(false) @map("is_read")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  subscriber   Subscriber?      @relation(fields: [subscriberId], references: [id])
+
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model ProviderSyncLog {
+  id              String        @id @default(uuid()) @db.Uuid
+  direction       SyncDirection
+  simInventoryId  String?       @map("sim_inventory_id") @db.Uuid
+  subscriberId    String?       @map("subscriber_id") @db.Uuid
+  endpoint        String?       @db.VarChar(200)
+  requestPayload  Json?         @map("request_payload")
+  responsePayload Json?         @map("response_payload")
+  status          SyncStatus    @default(pending)
+  httpStatusCode  Int?          @map("http_status_code")
+  errorMessage    String?       @map("error_message") @db.Text
+  retryCount      Int           @default(0) @map("retry_count")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  simInventory    SimInventory? @relation(fields: [simInventoryId], references: [id])
+  subscriber      Subscriber?   @relation(fields: [subscriberId], references: [id])
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("provider_sync_log")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
