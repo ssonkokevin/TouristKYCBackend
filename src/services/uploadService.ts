@@ -35,5 +35,8 @@ export async function uploadFile(file: Express.Multer.File, filePath: string): P
   const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
   const filename = `${unique}-${file.originalname}`;
   fs.writeFileSync(path.join(uploadsDir, filename), file.buffer);
-  return `/uploads/${filename}`;
+  const relativePath = `/uploads/${filename}`;
+  return config.PUBLIC_BASE_URL
+    ? `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}${relativePath}`
+    : relativePath;
 }

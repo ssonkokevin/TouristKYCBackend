@@ -24,11 +24,30 @@ import { mockProviderRouter } from "./routes/mockProvider.js";
 import { logsRouter } from "./routes/logs.js";
 import { requestLogger } from "./middleware/requestLogger.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { config } from "./config.js";
 
 export const app = express();
 
+// We sit behind Nginx (and potentially other proxies) in production. Trusting
+// the proxy ensures req.ip reflects the real client IP (via X-Forwarded-For),
+// which is required for accurate rate limiting (e.g. /auth/login) and audit
+// logs. TRUST_PROXY can be set to a hop count (e.g. "1") or "true"/"false".
+if (config.TRUST_PROXY) {
+  const trustProxyValue = config.TRUST_PROXY === "true" || config.TRUST_PROXY === "false"
+    ? config.TRUST_PROXY === "true"
+    : Number.isNaN(Number(config.TRUST_PROXY))
+      ? config.TRUST_PROXY
+      : Number(config.TRUST_PROXY);
+  app.set("trust proxy", trustProxyValue);
+}
+
 app.use(helmet());
-app.use(cors());
+app.use(
+  cors({
+    origin: config.FRONTEND_URL || true,
+    credentials: true,
+  })
+);
 app.use(requestLogger);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));

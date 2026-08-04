@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, DocumentType } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { emitSubscriberRegistered } from "../sockets/index.js";
 import { queueSyncProviderAssignment } from "../jobs/queue.js";
@@ -30,10 +30,41 @@ function mapSnakeToCamel(data: any) {
     agentId: data.agent_id,
     agentNumber: data.agent_number,
     agentName: data.agent_name,
-    subscriberPhotoUrl: data.subscriber_photo_url,
-    passportBioPageUrl: data.passport_bio_page_url,
-    visaPageUrl: data.visa_page_url,
-    applicationFormUrl: data.application_form_url,
+  };
+}
+
+const documentTypeFields: Record<string, DocumentType> = {
+  subscriber_photo_url: "subscriber_photo",
+  passport_bio_page_url: "passport_bio_page",
+  visa_page_url: "visa_page",
+  application_form_url: "application_form",
+};
+
+function buildDocumentCreates(subscriberId: string, data: any) {
+  const docs: { subscriberId: string; type: DocumentType; url: string }[] = [];
+  for (const [field, type] of Object.entries(documentTypeFields)) {
+    const url = data[field];
+    if (url) {
+      docs.push({ subscriberId, type, url });
+    }
+  }
+  return docs;
+}
+
+function serializeDocuments(documents: { type: DocumentType; url: string; uploadedAt: Date }[] | undefined | null) {
+  if (!documents || documents.length === 0) return undefined;
+  const result: Record<string, { url: string; uploadedAt: string }> = {};
+  for (const doc of documents) {
+    result[doc.type] = { url: doc.url, uploadedAt: doc.uploadedAt.toISOString() };
+  }
+  return result;
+}
+
+function serializeSubscriber(subscriber: any, providerSyncStatus?: string) {
+  return {
+    ...subscriber,
+    documents: serializeDocuments(subscriber.documents),
+    provider_sync_status: providerSyncStatus,
   };
 }
 
@@ -41,6 +72,7 @@ const resourceInclude = {
   nationality: true,
   simInventory: true,
   msisdnPool: { take: 1 },
+  documents: true,
 } as const;
 
 export async function createSubscriber(input: any) {
@@ -82,10 +114,7 @@ export async function createSubscriber(input: any) {
     include: resourceInclude,
   });
   if (existing) {
-    return {
-      ...existing,
-      provider_sync_status: "already_registered",
-    };
+    return serializeSubscriber(existing, "already_registered");
   }
 
   const created = await prisma.$transaction(async (tx) => {
@@ -124,12 +153,23 @@ export async function createSubscriber(input: any) {
       include: resourceInclude,
     });
 
+    const docs = buildDocumentCreates(sub.id, data);
+    if (docs.length > 0) {
+      await tx.subscriberDocument.createMany({ data: docs });
+    }
+
     await tx.msisdnPool.update({
       where: { id: resolvedMsisdnId },
       data: { assignedSubscriberId: sub.id },
     });
 
-    return sub;
+    // Refetch to include the newly created documents
+    const fullSub = await tx.subscriber.findUniqueOrThrow({
+      where: { id: sub.id },
+      include: resourceInclude,
+    });
+
+    return fullSub;
   });
 
   // Refetch so the msisdnPool relation reflects the assignedSubscriberId update.
@@ -138,7 +178,9 @@ export async function createSubscriber(input: any) {
     include: resourceInclude,
   });
 
-  emitSubscriberRegistered(subscriber);
+  const serialized = serializeSubscriber(subscriber);
+
+  emitSubscriberRegistered(serialized);
 
   // Queue async outbound provider notification
   await queueSyncProviderAssignment({
@@ -147,10 +189,7 @@ export async function createSubscriber(input: any) {
     msisdnId: resolvedMsisdnId,
   });
 
-  return {
-    ...subscriber,
-    provider_sync_status: "queued",
-  };
+  return serializeSubscriber(subscriber, "queued");
 }
 
 export async function listSubscribers(filters: {
@@ -204,12 +243,18 @@ export async function listSubscribers(filters: {
         nationality: { select: { name: true, flagEmoji: true } },
         simInventory: { select: { imsi: true, iccid: true, type: true, batchId: true } },
         msisdnPool: { take: 1, select: { msisdn: true } },
+        documents: true,
       },
     }),
     prisma.subscriber.count({ where }),
   ]);
 
-  return { data, total, page: filters.page, limit: filters.limit };
+  return {
+    data: data.map((s) => serializeSubscriber(s)),
+    total,
+    page: filters.page,
+    limit: filters.limit,
+  };
 }
 
 export async function getSubscriber(id: string) {
@@ -219,6 +264,7 @@ export async function getSubscriber(id: string) {
       nationality: true,
       simInventory: true,
       msisdnPool: { take: 1, include: { simInventory: true } },
+      documents: true,
       suspension: true,
       deregistration: true,
       providerSyncLog: { orderBy: { createdAt: "desc" }, take: 20 },
@@ -229,7 +275,7 @@ export async function getSubscriber(id: string) {
     (error as any).statusCode = 404;
     throw error;
   }
-  return subscriber;
+  return serializeSubscriber(subscriber);
 }
 
 export async function updateSubscriber(id: string, input: any) {
@@ -243,13 +289,16 @@ export async function updateSubscriber(id: string, input: any) {
   // Prevent direct status changes via this endpoint; use lifecycle functions
   const { status, sim_inventory_id, msisdn_id, ...safeInput } = input;
 
-  return prisma.subscriber.update({
+  const updated = await prisma.subscriber.update({
     where: { id },
     data: safeInput,
     include: {
       nationality: true,
       simInventory: true,
       msisdnPool: { take: 1 },
+      documents: true,
     },
   });
+
+  return serializeSubscriber(updated);
 }
