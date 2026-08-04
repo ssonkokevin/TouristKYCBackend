@@ -4,6 +4,7 @@
   "description": "Tourist KYC platform backend",
   "type": "module",
   "scripts": {
+    "postinstall": "prisma generate --schema=src/prisma/schema.prisma",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
