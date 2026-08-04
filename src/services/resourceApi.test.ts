@@ -211,10 +211,10 @@ describe("EMRG resource API corrections", () => {
     expect(sub.registrationType).toBe("new");
     expect(sub.agentNumber).toBe("102");
     expect(sub.registeredAt).toEqual(new Date("2026-07-29"));
-    expect(sub.subscriberPhotoUrl).toBe(`https://cdn.example.com/photo-F.jpg`);
-    expect(sub.passportBioPageUrl).toBe(`https://cdn.example.com/passport-F.jpg`);
-    expect(sub.visaPageUrl).toBe(`https://cdn.example.com/visa-F.jpg`);
-    expect(sub.applicationFormUrl).toBe(`https://cdn.example.com/form-F.pdf`);
+    expect(sub.documents?.subscriber_photo?.url).toBe(`https://cdn.example.com/photo-F.jpg`);
+    expect(sub.documents?.passport_bio_page?.url).toBe(`https://cdn.example.com/passport-F.jpg`);
+    expect(sub.documents?.visa_page?.url).toBe(`https://cdn.example.com/visa-F.jpg`);
+    expect(sub.documents?.application_form?.url).toBe(`https://cdn.example.com/form-F.pdf`);
   });
 
   it("creates subscribers idempotently and race-guards resource status", async () => {

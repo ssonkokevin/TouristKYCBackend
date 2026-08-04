@@ -21,6 +21,11 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_KEY: z.string().optional(),
   SUPABASE_BUCKET: z.string().default("subscriber-documents"),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  ALLOWED_EMAIL_DOMAINS: z.string().optional(),
+  FRONTEND_URL: z.string().url().optional(),
+  PUBLIC_BASE_URL: z.string().url().optional(),
+  TRUST_PROXY: z.string().optional(),
   MOCK_PROVIDER_FAILURE_RATE: z.coerce.number().min(0).max(1).default(0),
   MOCK_PROVIDER_DELAY_MS: z.coerce.number().default(500),
 });

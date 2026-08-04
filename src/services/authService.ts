@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
+import { verifyGoogleToken } from "./googleAuthService.js";
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -35,6 +36,11 @@ export async function login(input: unknown) {
   const { email, password } = loginSchema.parse(input);
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
+    const error = new Error("Invalid credentials");
+    (error as any).statusCode = 401;
+    throw error;
+  }
+  if (!user.passwordHash) {
     const error = new Error("Invalid credentials");
     (error as any).statusCode = 401;
     throw error;
@@ -72,6 +78,36 @@ export async function refresh(userId: string) {
     { expiresIn: "1d" }
   );
   return { token, user };
+}
+
+export async function loginWithGoogle(idToken: string) {
+  const payload = await verifyGoogleToken(idToken);
+
+  let user = await prisma.user.findUnique({
+    where: { email: payload.email },
+  });
+
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email: payload.email,
+        name: payload.name || payload.email,
+        passwordHash: null,
+        role: "viewer",
+      },
+    });
+  }
+
+  const token = jwt.sign(
+    { id: user.id, email: user.email, name: user.name, role: user.role },
+    config.JWT_SECRET,
+    { expiresIn: "1d" }
+  );
+
+  return {
+    token,
+    user: { id: user.id, email: user.email, name: user.name, role: user.role },
+  };
 }
 
 export async function getMe(userId: string) {

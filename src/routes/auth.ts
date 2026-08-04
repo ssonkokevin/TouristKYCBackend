@@ -1,7 +1,12 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { register, login, refresh, getMe } from "../services/authService.js";
+import { login, refresh, getMe, loginWithGoogle } from "../services/authService.js";
 import { requireAuth, AuthRequest } from "../middleware/requireAuth.js";
+import { z } from "zod";
+
+const googleLoginSchema = z.object({
+  idToken: z.string().min(1),
+});
 
 export const authRouter = Router();
 
@@ -13,10 +18,15 @@ const loginLimiter = rateLimit({
   message: { error: "Too many login attempts. Please try again later." },
 });
 
-authRouter.post("/register", async (req, res, next) => {
+authRouter.post("/register", async (_req, res) => {
+  res.status(410).json({ error: "Gone", message: "Self-service registration is disabled. Use Google sign-in." });
+});
+
+authRouter.post("/google", loginLimiter, async (req, res, next) => {
   try {
-    const user = await register(req.body);
-    res.status(201).json(user);
+    const { idToken } = googleLoginSchema.parse(req.body);
+    const result = await loginWithGoogle(idToken);
+    res.json(result);
   } catch (err) {
     next(err);
   }

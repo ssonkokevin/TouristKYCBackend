@@ -1,42 +1,63 @@
+import { DocumentType } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { uploadFile } from "./uploadService.js";
 
-const fieldMap: Record<string, string> = {
-  application_form: "applicationFormUrl",
-  passport_bio_page: "passportBioPageUrl",
-  visa_page: "visaPageUrl",
-  subscriber_photo: "subscriberPhotoUrl",
-};
+const validTypes: DocumentType[] = [
+  "application_form",
+  "passport_bio_page",
+  "visa_page",
+  "subscriber_photo",
+];
 
 export async function uploadDocument(subscriberId: string, type: string, file: any) {
-  const field = fieldMap[type];
-  if (!field) {
+  if (!validTypes.includes(type as DocumentType)) {
     const error = new Error("Invalid document type");
     (error as any).statusCode = 400;
     throw error;
   }
+
+  const documentType = type as DocumentType;
 
   const path = `subscribers/${subscriberId}/${type}/${file.originalname || "document"}`;
   const url = await uploadFile(file, path);
 
-  return prisma.subscriber.update({
-    where: { id: subscriberId },
-    data: { [field]: url },
-    select: { id: true, [field]: true },
+  return prisma.subscriberDocument.upsert({
+    where: {
+      subscriberId_type: { subscriberId, type: documentType },
+    },
+    create: {
+      subscriberId,
+      type: documentType,
+      url,
+    },
+    update: {
+      url,
+      uploadedAt: new Date(),
+    },
   });
 }
 
 export async function deleteDocument(subscriberId: string, type: string) {
-  const field = fieldMap[type];
-  if (!field) {
+  if (!validTypes.includes(type as DocumentType)) {
     const error = new Error("Invalid document type");
     (error as any).statusCode = 400;
     throw error;
   }
 
-  return prisma.subscriber.update({
-    where: { id: subscriberId },
-    data: { [field]: null },
-    select: { id: true, [field]: true },
-  });
+  const documentType = type as DocumentType;
+
+  try {
+    return await prisma.subscriberDocument.delete({
+      where: {
+        subscriberId_type: { subscriberId, type: documentType },
+      },
+    });
+  } catch (err: any) {
+    if (err.code === "P2025") {
+      const error = new Error("Document not found");
+      (error as any).statusCode = 404;
+      throw error;
+    }
+    throw err;
+  }
 }

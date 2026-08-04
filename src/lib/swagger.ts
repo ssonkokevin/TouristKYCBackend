@@ -1,3 +1,18 @@
+import { config } from "../config.js";
+
+const swaggerServers = config.PUBLIC_BASE_URL
+  ? [
+      {
+        url: `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1`,
+        description: "Production",
+      },
+    ]
+  : [
+      {
+        url: "/api/v1",
+        description: "Local / VM backend (relative to current host)",
+      },
+    ];
 
 export const swaggerSpec = {
   openapi: "3.0.3",
@@ -11,12 +26,7 @@ export const swaggerSpec = {
       name: "EMRG Integration Support",
     },
   },
-  servers: [
-    {
-      url: "/api/v1",
-      description: "Local / VM backend",
-    },
-  ],
+  servers: swaggerServers,
   tags: [
     { name: "Auth", description: "Authentication for dashboard users" },
     { name: "Resources", description: "SIM and MSISDN provisioning for external systems (API key auth)" },
@@ -148,10 +158,12 @@ export const swaggerSpec = {
           msisdn_id: { type: "string", format: "uuid", nullable: true },
           sim_inventory: { $ref: "#/components/schemas/SimInventory" },
           msisdn_pool: { type: "array", items: { $ref: "#/components/schemas/MsisdnPool" } },
-          subscriber_photo_url: { type: "string", nullable: true },
-          passport_bio_page_url: { type: "string", nullable: true },
-          visa_page_url: { type: "string", nullable: true },
-          application_form_url: { type: "string", nullable: true },
+          documents: {
+            type: "object",
+            description: "Uploaded documents keyed by DocumentType",
+            additionalProperties: { $ref: "#/components/schemas/SubscriberDocument" },
+            nullable: true,
+          },
           registration_type: { type: "string", nullable: true },
           date_of_registration: { type: "string", format: "date-time", nullable: true },
           status: { type: "string", enum: ["active", "suspended", "deregistered"] },
@@ -175,13 +187,20 @@ export const swaggerSpec = {
           updatedAt: { type: "string", format: "date-time" },
         },
       },
+      SubscriberDocument: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          uploadedAt: { type: "string", format: "date-time" },
+        },
+      },
     },
   },
   paths: {
     "/auth/login": {
       post: {
         tags: ["Auth"],
-        summary: "Log in a dashboard user",
+        summary: "Password login (break-glass for service accounts only)",
         security: [],
         requestBody: {
           required: true,
@@ -217,10 +236,11 @@ export const swaggerSpec = {
         },
       },
     },
-    "/auth/register": {
+    "/auth/google": {
       post: {
         tags: ["Auth"],
-        summary: "Register a new dashboard user",
+        summary: "Sign in with Google",
+        description: "Exchanges a Google ID token for an app JWT. New users default to role 'viewer'.",
         security: [],
         requestBody: {
           required: true,
@@ -228,19 +248,42 @@ export const swaggerSpec = {
             "application/json": {
               schema: {
                 type: "object",
-                required: ["email", "password"],
+                required: ["idToken"],
                 properties: {
-                  email: { type: "string", format: "email" },
-                  password: { type: "string", minLength: 6 },
-                  name: { type: "string" },
+                  idToken: { type: "string", description: "Google OAuth ID token (credential)" },
                 },
               },
             },
           },
         },
         responses: {
-          "201": { description: "User created", content: { "application/json": { schema: { $ref: "#/components/schemas/User" } } } },
-          "409": { description: "User already exists", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "200": {
+            description: "Login successful",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    token: { type: "string" },
+                    user: { $ref: "#/components/schemas/User" },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Invalid or unverified token", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "403": { description: "Email domain is not authorized", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+    "/auth/register": {
+      post: {
+        tags: ["Auth"],
+        summary: "Self-service registration is disabled",
+        description: "Self-service registration is disabled. Use POST /auth/google.",
+        security: [],
+        responses: {
+          "410": { description: "Gone", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         },
       },
     },

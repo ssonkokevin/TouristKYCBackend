@@ -63,6 +63,13 @@ enum DeregistrationReason {
   other
 }
 
+enum DocumentType {
+  subscriber_photo
+  application_form
+  passport_bio_page
+  visa_page
+}
+
 enum NotificationType {
   visa_expiring_soon
   visa_expired_suspended
@@ -174,11 +181,8 @@ model Subscriber {
   simInventoryId      String?          @unique @map("sim_inventory_id") @db.Uuid
   msisdnId            String?          @map("msisdn_id") @db.Uuid
 
-  // Document URLs
-  subscriberPhotoUrl  String?          @map("subscriber_photo_url") @db.VarChar(500)
-  passportBioPageUrl  String?          @map("passport_bio_page_url") @db.VarChar(500)
-  visaPageUrl         String?          @map("visa_page_url") @db.VarChar(500)
-  applicationFormUrl  String?          @map("application_form_url") @db.VarChar(500)
+  // Document relation
+  documents           SubscriberDocument[]
 
   // Status
   status              SubscriberStatus @default(active)
@@ -279,11 +283,23 @@ model ProviderSyncLog {
 model User {
   id           String   @id @default(uuid()) @db.Uuid
   email        String   @unique
-  passwordHash String   @map("password_hash")
+  passwordHash String?  @map("password_hash")
   name         String
   role         String   @default("admin")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("users")
+}
+
+model SubscriberDocument {
+  id           String       @id @default(uuid()) @db.Uuid
+  subscriberId String       @map("subscriber_id") @db.Uuid
+  subscriber   Subscriber   @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  type         DocumentType
+  url          String       @db.VarChar(500)
+  uploadedAt   DateTime     @default(now()) @map("uploaded_at")
+
+  @@unique([subscriberId, type])
+  @@map("subscriber_documents")
 }
