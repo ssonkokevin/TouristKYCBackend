@@ -3,7 +3,11 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
-import { verifyGoogleToken } from "./googleAuthService.js";
+// Google Sign-In is disabled (see /auth/google route below) — deployment
+// requires HTTPS on a publicly resolvable origin for Google's authorized
+// JavaScript origins, which this environment does not use. Kept importable
+// in case Google auth is re-enabled later.
+// import { verifyGoogleToken } from "./googleAuthService.js";
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -11,8 +15,9 @@ const registerSchema = z.object({
   name: z.string().optional(),
 });
 
+// identifier: accepts either an email address or a phone number
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1),
   password: z.string(),
 });
 
@@ -33,8 +38,11 @@ export async function register(input: unknown) {
 }
 
 export async function login(input: unknown) {
-  const { email, password } = loginSchema.parse(input);
-  const user = await prisma.user.findUnique({ where: { email } });
+  const { identifier, password } = loginSchema.parse(input);
+  const isEmail = identifier.includes("@");
+  const user = await prisma.user.findUnique({
+    where: isEmail ? { email: identifier } : { phone: identifier },
+  });
   if (!user) {
     const error = new Error("Invalid credentials");
     (error as any).statusCode = 401;
@@ -80,35 +88,38 @@ export async function refresh(userId: string) {
   return { token, user };
 }
 
-export async function loginWithGoogle(idToken: string) {
-  const payload = await verifyGoogleToken(idToken);
-
-  let user = await prisma.user.findUnique({
-    where: { email: payload.email },
-  });
-
-  if (!user) {
-    user = await prisma.user.create({
-      data: {
-        email: payload.email,
-        name: payload.name || payload.email,
-        passwordHash: null,
-        role: "viewer",
-      },
-    });
-  }
-
-  const token = jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role },
-    config.JWT_SECRET,
-    { expiresIn: "1d" }
-  );
-
-  return {
-    token,
-    user: { id: user.id, email: user.email, name: user.name, role: user.role },
-  };
-}
+// Google Sign-In disabled — see note near the top of this file. Kept here
+// (commented out) rather than deleted so it can be restored later without
+// reconstructing the flow from scratch.
+// export async function loginWithGoogle(idToken: string) {
+//   const payload = await verifyGoogleToken(idToken);
+//
+//   let user = await prisma.user.findUnique({
+//     where: { email: payload.email },
+//   });
+//
+//   if (!user) {
+//     user = await prisma.user.create({
+//       data: {
+//         email: payload.email,
+//         name: payload.name || payload.email,
+//         passwordHash: null,
+//         role: "viewer",
+//       },
+//     });
+//   }
+//
+//   const token = jwt.sign(
+//     { id: user.id, email: user.email, name: user.name, role: user.role },
+//     config.JWT_SECRET,
+//     { expiresIn: "1d" }
+//   );
+//
+//   return {
+//     token,
+//     user: { id: user.id, email: user.email, name: user.name, role: user.role },
+//   };
+// }
 
 export async function getMe(userId: string) {
   const user = await prisma.user.findUnique({
