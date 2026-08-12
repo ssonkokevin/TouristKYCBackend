@@ -1,0 +1,70 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: tourist-kyc-postgres
+    environment:
+      POSTGRES_USER: tourist_kyc
+      POSTGRES_PASSWORD: tourist_kyc
+      POSTGRES_DB: tourist_kyc
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tourist_kyc -d tourist_kyc"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tourist-kyc-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tourist-kyc-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://tourist_kyc:tourist_kyc@postgres:5432/tourist_kyc
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    volumes:
+      - backend_logs:/app/logs
+    command: sh -c "npx prisma migrate deploy --schema=src/prisma/schema.prisma && node dist/server.js"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tourist-kyc-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "2112:2112"
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_logs:
