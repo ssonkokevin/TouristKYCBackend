@@ -548,7 +548,7 @@ export const swaggerSpec = {
         tags: ["Subscribers"],
         summary: "Register a new subscriber (KYC push from external system)",
         description: "Called by the external provisioning system after it has provisioned the SIM/MSISDN to the tourist. Either `sim_inventory_id` + `msisdn_id` (from §2.1/§2.2) or `iccid` + `msisdn` may be used. The selected resources are atomically transitioned from `available`/`provisioned` to `assigned` and linked to the new subscriber. Retrying the same resource pair returns the existing record with `provider_sync_status: already_registered`.",
-        security: [{ bearerAuth: [] }],
+        security: [{ apiKeyAuth: [] }],
         requestBody: {
           required: true,
           content: {

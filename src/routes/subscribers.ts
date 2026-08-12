@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, AuthRequest } from "../middleware/requireAuth.js";
+import { requireApiKey } from "../middleware/requireApiKey.js";
 import {
   createSubscriber,
   listSubscribers,
@@ -10,8 +11,6 @@ import {
 import { suspendSubscriber, deregisterSubscriber } from "../services/subscriberLifecycle.js";
 
 export const subscribersRouter = Router();
-
-subscribersRouter.use(requireAuth);
 
 const listSchema = z.object({
   page: z.coerce.number().min(1).default(1),
@@ -29,7 +28,7 @@ const listSchema = z.object({
   msisdn: z.string().optional(),
 });
 
-subscribersRouter.get("/", async (req, res, next) => {
+subscribersRouter.get("/", requireAuth, async (req, res, next) => {
   try {
     const filters = listSchema.parse(req.query);
     const result = await listSubscribers(filters);
@@ -85,7 +84,8 @@ const createSchema = z
     }
   );
 
-subscribersRouter.post("/", async (req, res, next) => {
+// Pushed by EMRG's middleware using the shared INBOUND_API_KEY (not a dashboard JWT).
+subscribersRouter.post("/", requireApiKey, async (req, res, next) => {
   try {
     const data = createSchema.parse(req.body);
     const subscriber = await createSubscriber(data);
@@ -95,7 +95,7 @@ subscribersRouter.post("/", async (req, res, next) => {
   }
 });
 
-subscribersRouter.get("/:id", async (req, res, next) => {
+subscribersRouter.get("/:id", requireAuth, async (req, res, next) => {
   try {
     const subscriber = await getSubscriber(req.params.id);
     res.json(subscriber);
@@ -104,7 +104,7 @@ subscribersRouter.get("/:id", async (req, res, next) => {
   }
 });
 
-subscribersRouter.patch("/:id", async (req, res, next) => {
+subscribersRouter.patch("/:id", requireAuth, async (req, res, next) => {
   try {
     const subscriber = await updateSubscriber(req.params.id, req.body);
     res.json(subscriber);
@@ -118,7 +118,7 @@ const suspendSchema = z.object({
   reason_note: z.string().optional(),
 });
 
-subscribersRouter.post("/:id/suspend", async (req: AuthRequest, res, next) => {
+subscribersRouter.post("/:id/suspend", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { reason, reason_note } = suspendSchema.parse(req.body);
     const suspendedBy = req.user!.name;
@@ -142,7 +142,7 @@ const deregisterSchema = z.object({
   reason_note: z.string().optional(),
 });
 
-subscribersRouter.post("/:id/deregister", async (req: AuthRequest, res, next) => {
+subscribersRouter.post("/:id/deregister", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { reason, reason_note } = deregisterSchema.parse(req.body);
     const operator = req.user!.name;
