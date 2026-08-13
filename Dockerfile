@@ -9,6 +9,7 @@ RUN npx prisma generate --schema=src/prisma/schema.prisma
 RUN npm run build
 
 FROM node:20-alpine
+RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 
