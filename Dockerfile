@@ -1,5 +1,5 @@
 FROM node:20-alpine AS builder
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl openssl1.1-compat
 WORKDIR /app
 
 COPY package*.json ./
@@ -10,7 +10,7 @@ COPY . .
 RUN npm run build
 
 FROM node:20-alpine
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl openssl1.1-compat
 WORKDIR /app
 ENV NODE_ENV=production
 
