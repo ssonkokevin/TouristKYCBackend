@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: tourist_kyc
       POSTGRES_DB: tourist_kyc
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +22,7 @@ services:
     image: redis:7-alpine
     container_name: tourist-kyc-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
