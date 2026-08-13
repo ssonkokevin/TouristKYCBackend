@@ -3,10 +3,10 @@ RUN apk add --no-cache openssl
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --ignore-scripts
+COPY src/prisma ./src/prisma
+RUN npm ci
 
 COPY . .
-RUN npx prisma generate --schema=src/prisma/schema.prisma
 RUN npm run build
 
 FROM node:20-alpine
