@@ -277,7 +277,7 @@ Then add `FRONTEND_URL=https://your-vercel-app.vercel.app` to the backend `.env`
 Once deployed, Swagger UI is publicly available at:
 
 ```
-https://api.yourdomain.com/api-docs
+http://10.1.10.67:3001/api-docs
 ```
 
 The raw OpenAPI JSON is at `/api-docs.json`.
@@ -304,7 +304,7 @@ Vercel normally detects Vite automatically. Verify these values in the project s
 Add in Vercel → Settings → Environment Variables:
 
 ```
-VITE_API_URL=https://api.yourdomain.com/api/v1
+VITE_API_URL=http://10.1.10.67:3001/api/v1
 ```
 
 The frontend client uses this base URL for all API calls. Make sure it matches the public VM domain and includes `/api/v1`.
@@ -340,6 +340,6 @@ Every push to `main` will auto-deploy. For the first deploy, Vercel gives you a 
 ## D. Quick verification checklist
 
 - `curl https://api.yourdomain.com/health` returns `{"status":"ok"}`.
-- `curl https://api.yourdomain.com/api-docs.json` returns the OpenAPI spec.
+- `curl http://10.1.10.67:3001/api-docs.json` returns the OpenAPI spec.
 - Vercel preview URL loads the login page.
 - Login with a seeded admin user works and dashboard data loads.
