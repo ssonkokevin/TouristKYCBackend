@@ -192,9 +192,7 @@ export async function createSubscriber(input: any) {
   return serializeSubscriber(subscriber, "queued");
 }
 
-export async function listSubscribers(filters: {
-  page: number;
-  limit: number;
+export interface SubscriberListFilters {
   status?: string;
   nationality?: string;
   visa_expiry_from?: Date;
@@ -206,7 +204,14 @@ export async function listSubscribers(filters: {
   name?: string;
   passport_number?: string;
   msisdn?: string;
-}) {
+}
+
+/**
+ * Shared filter construction used by both the paginated list endpoint and
+ * the (unpaginated) CSV export stream, so the two can never drift apart on
+ * what "the current filtered range" means.
+ */
+export function buildSubscriberWhere(filters: SubscriberListFilters): Prisma.SubscriberWhereInput {
   const where: Prisma.SubscriberWhereInput = {};
   if (filters.status) where.status = filters.status as any;
   if (filters.nationality) where.nationalityCode = filters.nationality;
@@ -232,19 +237,39 @@ export async function listSubscribers(filters: {
   if (filters.msisdn) {
     where.msisdnPool = { some: { msisdn: { contains: filters.msisdn } } };
   }
+  return where;
+}
+
+// Shared `include` shape for both the list endpoint and the CSV export
+// stream — carries the suspension/deregistration timestamps needed to fold
+// "Suspended · {date}" / "Deregistered · {date}" into a single status pill,
+// on top of the existing nationality/SIM/MSISDN relations.
+const listInclude = {
+  nationality: { select: { name: true, flagEmoji: true } },
+  simInventory: { select: { imsi: true, iccid: true, type: true, batchId: true } },
+  msisdnPool: { take: 1 as const, select: { msisdn: true } },
+  documents: true,
+  suspension: { select: { suspendedAt: true } },
+  deregistration: { select: { deregisteredAt: true } },
+} satisfies Prisma.SubscriberInclude;
+
+export async function listSubscribers(
+  filters: SubscriberListFilters & {
+    page: number;
+    limit: number;
+    sort_by?: "registeredAt" | "visaExpiryDate";
+    sort_dir?: "asc" | "desc";
+  }
+) {
+  const where = buildSubscriberWhere(filters);
 
   const [data, total] = await Promise.all([
     prisma.subscriber.findMany({
       where,
       skip: (filters.page - 1) * filters.limit,
       take: filters.limit,
-      orderBy: { registeredAt: "desc" },
-      include: {
-        nationality: { select: { name: true, flagEmoji: true } },
-        simInventory: { select: { imsi: true, iccid: true, type: true, batchId: true } },
-        msisdnPool: { take: 1, select: { msisdn: true } },
-        documents: true,
-      },
+      orderBy: { [filters.sort_by ?? "registeredAt"]: filters.sort_dir ?? "desc" },
+      include: listInclude,
     }),
     prisma.subscriber.count({ where }),
   ]);
@@ -255,6 +280,33 @@ export async function listSubscribers(filters: {
     page: filters.page,
     limit: filters.limit,
   };
+}
+
+const EXPORT_BATCH_SIZE = 500;
+
+/**
+ * Async generator over every subscriber matching `filters`, in fixed-size
+ * batches, for the CSV export stream — deliberately bypasses the 5000-row
+ * page cap the paginated list endpoint enforces, since export needs to
+ * reflect every matching row for compliance, but never materializes the
+ * whole result set in memory at once.
+ */
+export async function* iterateSubscribersForExport(filters: SubscriberListFilters) {
+  const where = buildSubscriberWhere(filters);
+  let skip = 0;
+  for (;;) {
+    const batch = await prisma.subscriber.findMany({
+      where,
+      skip,
+      take: EXPORT_BATCH_SIZE,
+      orderBy: { registeredAt: "desc" },
+      include: listInclude,
+    });
+    if (batch.length === 0) return;
+    for (const row of batch) yield row;
+    if (batch.length < EXPORT_BATCH_SIZE) return;
+    skip += EXPORT_BATCH_SIZE;
+  }
 }
 
 export async function getSubscriber(id: string) {

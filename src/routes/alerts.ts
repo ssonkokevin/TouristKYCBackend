@@ -22,13 +22,15 @@ alertsRouter.get("/visa-expiry", async (req, res, next) => {
 });
 
 const trendSchema = z.object({
-  days: z.coerce.number().min(7).max(365).default(30),
+  days: z.coerce.number().min(7).max(365).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
 });
 
 alertsRouter.get("/trends/registrations", async (req, res, next) => {
   try {
-    const { days } = trendSchema.parse(req.query);
-    const data = await getRegistrationTrend(days);
+    const { days, from, to } = trendSchema.parse(req.query);
+    const data = await getRegistrationTrend(from && to ? { from, to } : days ?? 30);
     res.json(data);
   } catch (err) {
     next(err);

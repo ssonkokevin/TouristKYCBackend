@@ -50,9 +50,16 @@ export async function getVisaExpiryAlerts(range: "7d" | "1m" | "6m" | "1y") {
   return { range: format, data };
 }
 
-export async function getRegistrationTrend(days: number) {
-  const start = moment().subtract(days - 1, "days").startOf("day");
-  const end = moment().endOf("day");
+/**
+ * Day-by-day registration counts. Either pass `days` (bucketed backward from
+ * today — the dashboard's fixed 365-day fetch that gets sliced client-side
+ * for the 7D/30D/90D/1Y toggle), or an explicit `{ from, to }` range (used by
+ * the header date-range picker and Reports, which may not end today).
+ */
+export async function getRegistrationTrend(opts: number | { from: Date; to: Date }) {
+  const start = typeof opts === "number" ? moment().subtract(opts - 1, "days").startOf("day") : moment(opts.from).startOf("day");
+  const end = typeof opts === "number" ? moment().endOf("day") : moment(opts.to).endOf("day");
+  const dayCount = Math.max(1, end.clone().startOf("day").diff(start, "days") + 1);
 
   const subscribers = await prisma.subscriber.findMany({
     where: { registeredAt: { gte: start.toDate(), lte: end.toDate() } },
@@ -60,7 +67,7 @@ export async function getRegistrationTrend(days: number) {
   });
 
   const map = new Map<string, number>();
-  for (let i = 0; i < days; i++) {
+  for (let i = 0; i < dayCount; i++) {
     const d = start.clone().add(i, "days").format("MMM D");
     map.set(d, 0);
   }

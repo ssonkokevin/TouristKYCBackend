@@ -26,6 +26,8 @@ const listSchema = z.object({
   name: z.string().optional(),
   passport_number: z.string().optional(),
   msisdn: z.string().optional(),
+  sort_by: z.enum(["registeredAt", "visaExpiryDate"]).optional(),
+  sort_dir: z.enum(["asc", "desc"]).optional(),
 });
 
 subscribersRouter.get("/", requireAuth, async (req, res, next) => {

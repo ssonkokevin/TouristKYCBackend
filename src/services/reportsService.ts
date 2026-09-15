@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma.js";
+import moment from "moment";
 
 export async function getByVisaType(from?: Date, to?: Date) {
   const where: any = {};
@@ -38,6 +39,32 @@ export async function getByPurpose(from?: Date, to?: Date) {
   return rows
     .filter((r) => r.purposeOfVisit)
     .map((r) => ({ label: r.purposeOfVisit, count: r._count.purposeOfVisit }));
+}
+
+/** Day-by-day count of SIMs provisioned (SimInventory.provisionedAt), for
+ * the Reports "SIM Usage" tab. Defaults to the last 30 days when no range is
+ * given, mirroring alertsService.getRegistrationTrend's bucketing shape. */
+export async function getSimProvisioningTrend(from?: Date, to?: Date) {
+  const start = from ? moment(from).startOf("day") : moment().subtract(29, "days").startOf("day");
+  const end = to ? moment(to).endOf("day") : moment().endOf("day");
+  const dayCount = Math.max(1, end.clone().startOf("day").diff(start, "days") + 1);
+
+  const provisioned = await prisma.simInventory.findMany({
+    where: { provisionedAt: { gte: start.toDate(), lte: end.toDate() } },
+    select: { provisionedAt: true },
+  });
+
+  const map = new Map<string, number>();
+  for (let i = 0; i < dayCount; i++) {
+    map.set(start.clone().add(i, "days").format("MMM D"), 0);
+  }
+  for (const s of provisioned) {
+    if (!s.provisionedAt) continue;
+    const d = moment(s.provisionedAt).format("MMM D");
+    map.set(d, (map.get(d) || 0) + 1);
+  }
+
+  return Array.from(map.entries()).map(([label, count]) => ({ label, count }));
 }
 
 export async function getByNationality(from?: Date, to?: Date) {
