@@ -58,17 +58,17 @@ Put the VM behind a reverse proxy (nginx or Caddy) on the Proxmox host or anothe
 
 ## 9. Using a custom frontend port and multiple platforms on the same VM
 
-By default the Docker Compose setup publishes the frontend on port `80`. To use a different port (e.g. `2112`) so another platform can share the same IP, update the frontend container:
+By default the Docker Compose setup publishes the frontend on port `80`. To use a different port (e.g. `8900`) so another platform can share the same IP, update the frontend container:
 
-1. `frontend/nginx.conf` — change `listen 80;` to the new port (`listen 2112;`).
-2. `frontend/Dockerfile` — change `EXPOSE 80` to `EXPOSE 2112`.
-3. `docker-compose.yml` — change `ports: - "80:80"` to `ports: - "2112:2112"`.
+1. `frontend/nginx.conf` — change `listen 80;` to the new port (`listen 8900;`).
+2. `frontend/Dockerfile` — change `EXPOSE 80` to `EXPOSE 8900`.
+3. `docker-compose.yml` — change `ports: - "80:80"` to `ports: - "8900:8900"`.
 4. Open the port on the VM firewall:
    ```bash
-   sudo ufw allow 2112/tcp   # or equivalent for your firewall
+   sudo ufw allow 8900/tcp   # or equivalent for your firewall
    ```
 
-Then access the portal at `http://<vm-ip>:2112`. The backend can still be reached through the frontend's nginx proxy at `/api/` and `/socket.io/`, or directly at `http://<vm-ip>:3001`.
+Then access the portal at `http://<vm-ip>:8900`. The backend can still be reached through the frontend's nginx proxy at `/api/` and `/socket.io/`, or directly at `http://<vm-ip>:3001`.
 
 ### Adding a second platform on the same IP
 
@@ -92,7 +92,7 @@ If you want both in the same `docker-compose.yml`, make sure service names are u
 
 Update the second frontend's nginx config to proxy to its own backend container name. Open each new host port on the firewall.
 
-If the KYC backend still allows CORS from all origins (`FRONTEND_URL` unset or `*`), no extra CORS changes are needed. For stricter CORS, set `FRONTEND_URL=http://<vm-ip>:2112` in `backend/.env`.
+If the KYC backend still allows CORS from all origins (`FRONTEND_URL` unset or `*`), no extra CORS changes are needed. For stricter CORS, set `FRONTEND_URL=http://<vm-ip>:8900` in `backend/.env`.
 
 ---
 
@@ -277,7 +277,7 @@ Then add `FRONTEND_URL=https://your-vercel-app.vercel.app` to the backend `.env`
 Once deployed, Swagger UI is publicly available at:
 
 ```
-http://10.1.10.67:3001/api-docs
+http://10.44.44.120:3001/api-docs
 ```
 
 The raw OpenAPI JSON is at `/api-docs.json`.
@@ -304,7 +304,7 @@ Vercel normally detects Vite automatically. Verify these values in the project s
 Add in Vercel → Settings → Environment Variables:
 
 ```
-VITE_API_URL=http://10.1.10.67:3001/api/v1
+VITE_API_URL=http://10.44.44.120:3001/api/v1
 ```
 
 The frontend client uses this base URL for all API calls. Make sure it matches the public VM domain and includes `/api/v1`.
@@ -340,6 +340,6 @@ Every push to `main` will auto-deploy. For the first deploy, Vercel gives you a 
 ## D. Quick verification checklist
 
 - `curl https://api.yourdomain.com/health` returns `{"status":"ok"}`.
-- `curl http://10.1.10.67:3001/api-docs.json` returns the OpenAPI spec.
+- `curl http://10.44.44.120:3001/api-docs.json` returns the OpenAPI spec.
 - Vercel preview URL loads the login page.
 - Login with a seeded admin user works and dashboard data loads.
