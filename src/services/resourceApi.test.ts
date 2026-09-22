@@ -217,6 +217,37 @@ describe("EMRG resource API corrections", () => {
     expect(sub.documents?.application_form?.url).toBe(`https://cdn.example.com/form-F.pdf`);
   });
 
+  it("stores an inline base64 image as bytes and serves it via a synthesized URL", async () => {
+    const sim = await createSim("G");
+    const msisdn = await createMsisdn("G");
+
+    // 1x1 transparent PNG
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+    const sub = await createSubscriber({
+      surname: "Test",
+      other_names: "Inline",
+      nationality_code: NATIONALITY_CODE,
+      passport_number: makePassport("G"),
+      visa_expiry_date: new Date("2030-01-01"),
+      sim_inventory_id: sim.id,
+      msisdn_id: msisdn.id,
+      subscriber_photo: `data:image/png;base64,${pngBase64}`,
+    });
+
+    expect(sub.documents?.subscriber_photo?.url).toContain(
+      `/api/v1/documents/subscribers/${sub.id}/subscriber_photo/raw`
+    );
+
+    const stored = await prisma.subscriberDocument.findUnique({
+      where: { subscriberId_type: { subscriberId: sub.id, type: "subscriber_photo" } },
+    });
+    expect(stored?.url).toBeNull();
+    expect(stored?.mimeType).toBe("image/png");
+    expect(Buffer.compare(stored!.imageData!, Buffer.from(pngBase64, "base64"))).toBe(0);
+  });
+
   it("creates subscribers idempotently and race-guards resource status", async () => {
     const sim = await createSim("B");
     const msisdn = await createMsisdn("B");

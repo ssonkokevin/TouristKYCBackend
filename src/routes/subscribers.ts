@@ -12,6 +12,41 @@ import { suspendSubscriber, deregisterSubscriber } from "../services/subscriberL
 
 export const subscribersRouter = Router();
 
+// Allow-list of image MIME types accepted on inline document fields.
+// SVG is intentionally excluded (can embed scripts). application_form may
+// additionally be a PDF, matching the dashboard's existing upload input.
+const ALLOWED_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+  "image/tiff",
+  "image/heic",
+  "image/heif",
+];
+const MAX_INLINE_IMAGE_BYTES = 10 * 1024 * 1024; // 10mb, matches uploadService's multer limit
+
+function dataUriField(allowedMimeTypes: string[]) {
+  return z
+    .string()
+    .refine(
+      (value) => {
+        const match = /^data:([\w.+-]+\/[\w.+-]+);base64,([A-Za-z0-9+/=\s]+)$/.exec(value);
+        if (!match) return false;
+        const [, mimeType, base64Payload] = match;
+        if (!allowedMimeTypes.includes(mimeType.toLowerCase())) return false;
+        // Rough decoded-size estimate from base64 length, avoids allocating a Buffer just to validate.
+        const approxBytes = (base64Payload.replace(/\s/g, "").length * 3) / 4;
+        return approxBytes <= MAX_INLINE_IMAGE_BYTES;
+      },
+      {
+        message: `Must be a data URI (data:<mime-type>;base64,<data>) using one of: ${allowedMimeTypes.join(", ")}, up to ${MAX_INLINE_IMAGE_BYTES / (1024 * 1024)}MB`,
+      }
+    )
+    .optional();
+}
+
 const listSchema = z.object({
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(5000).default(20),
@@ -75,6 +110,13 @@ const createSchema = z
     passport_bio_page_url: z.string().optional(),
     visa_page_url: z.string().optional(),
     application_form_url: z.string().optional(),
+    // Inline base64 images — preferred path now that the external system can
+    // push image bytes directly instead of a pre-hosted URL. Takes priority
+    // over the corresponding *_url field above when both are provided.
+    subscriber_photo: dataUriField(ALLOWED_IMAGE_MIME_TYPES),
+    passport_bio_page: dataUriField(ALLOWED_IMAGE_MIME_TYPES),
+    visa_page: dataUriField(ALLOWED_IMAGE_MIME_TYPES),
+    application_form: dataUriField([...ALLOWED_IMAGE_MIME_TYPES, "application/pdf"]),
   })
   .refine(
     (data) =>

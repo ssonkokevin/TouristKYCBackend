@@ -2,6 +2,7 @@ import { Prisma, DocumentType } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { emitSubscriberRegistered } from "../sockets/index.js";
 import { queueSyncProviderAssignment } from "../jobs/queue.js";
+import { config } from "../config.js";
 
 function mapSnakeToCamel(data: any) {
   return {
@@ -40,22 +41,68 @@ const documentTypeFields: Record<string, DocumentType> = {
   application_form_url: "application_form",
 };
 
+// Inline base64 (data URI) fields, one per document type — the path used by
+// the external system to push image bytes directly instead of a pre-hosted
+// URL. Field names deliberately mirror documentTypeFields minus the _url
+// suffix.
+const inlineImageFields: Record<string, DocumentType> = {
+  subscriber_photo: "subscriber_photo",
+  passport_bio_page: "passport_bio_page",
+  visa_page: "visa_page",
+  application_form: "application_form",
+};
+
+const DATA_URI_RE = /^data:([\w.+-]+\/[\w.+-]+);base64,([A-Za-z0-9+/=\s]+)$/;
+
 function buildDocumentCreates(subscriberId: string, data: any) {
-  const docs: { subscriberId: string; type: DocumentType; url: string }[] = [];
+  const docs: {
+    subscriberId: string;
+    type: DocumentType;
+    url?: string;
+    imageData?: Buffer;
+    mimeType?: string;
+  }[] = [];
+
+  for (const [field, type] of Object.entries(inlineImageFields)) {
+    const dataUri = data[field];
+    if (dataUri) {
+      const match = DATA_URI_RE.exec(dataUri);
+      if (!match) {
+        const error = new Error(`${field} must be a base64 data URI (data:<mime-type>;base64,<data>)`);
+        (error as any).statusCode = 400;
+        throw error;
+      }
+      const [, mimeType, base64Payload] = match;
+      docs.push({ subscriberId, type, imageData: Buffer.from(base64Payload, "base64"), mimeType });
+    }
+  }
+
+  const inlineTypes = new Set(docs.map((d) => d.type));
   for (const [field, type] of Object.entries(documentTypeFields)) {
+    if (inlineTypes.has(type)) continue; // inline image already provided for this type, it wins
     const url = data[field];
     if (url) {
       docs.push({ subscriberId, type, url });
     }
   }
+
   return docs;
 }
 
-function serializeDocuments(documents: { type: DocumentType; url: string; uploadedAt: Date }[] | undefined | null) {
+function serializeDocuments(
+  documents:
+    | { type: DocumentType; url: string | null; imageData: Buffer | null; mimeType: string | null; uploadedAt: Date }[]
+    | undefined
+    | null,
+  subscriberId?: string
+) {
   if (!documents || documents.length === 0) return undefined;
-  const result: Record<string, { url: string; uploadedAt: string }> = {};
+  const result: Record<string, { url: string | null; uploadedAt: string }> = {};
   for (const doc of documents) {
-    result[doc.type] = { url: doc.url, uploadedAt: doc.uploadedAt.toISOString() };
+    const url = doc.imageData
+      ? `${(config.PUBLIC_BASE_URL || "").replace(/\/$/, "")}/api/v1/documents/subscribers/${subscriberId}/${doc.type}/raw`
+      : doc.url;
+    result[doc.type] = { url, uploadedAt: doc.uploadedAt.toISOString() };
   }
   return result;
 }
@@ -63,7 +110,7 @@ function serializeDocuments(documents: { type: DocumentType; url: string; upload
 function serializeSubscriber(subscriber: any, providerSyncStatus?: string) {
   return {
     ...subscriber,
-    documents: serializeDocuments(subscriber.documents),
+    documents: serializeDocuments(subscriber.documents, subscriber.id),
     provider_sync_status: providerSyncStatus,
   };
 }

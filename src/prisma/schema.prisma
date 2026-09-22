@@ -299,7 +299,9 @@ model SubscriberDocument {
   subscriberId String       @map("subscriber_id") @db.Uuid
   subscriber   Subscriber   @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
   type         DocumentType
-  url          String       @db.VarChar(500)
+  url          String?      @db.VarChar(500)
+  imageData    Bytes?       @map("image_data")
+  mimeType     String?      @map("mime_type") @db.VarChar(100)
   uploadedAt   DateTime     @default(now()) @map("uploaded_at")
 
   @@unique([subscriberId, type])
