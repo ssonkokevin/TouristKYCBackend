@@ -51,8 +51,39 @@ docker compose logs -f backend
 ## 7. TLS / domain (recommended before real go-live)
 Put the VM behind a reverse proxy (nginx or Caddy) on the Proxmox host or another edge box, terminate TLS via Let's Encrypt, and forward to the VM's port 80.
 
+## 7b. Logs
+
+All application logs are written to `./logs/` on the VM, one level above `backend/` and `frontend/` (bind-mounted into the containers — not hidden inside a Docker-managed volume):
+
+```
+tourist-kyc/               <- docker-compose.yml lives here
+├── backend/
+├── frontend/
+└── logs/
+    ├── backend/            <- HTTP request log (every request, INF/WRN/ERR), one file per day
+    │   └── backend-log-YYYYMMDD.txt
+    ├── jobs/               <- background job worker/scheduler activity (SIM/MSISDN provider sync)
+    │   └── jobs-log-YYYYMMDD.txt
+    ├── frontend/           <- browser-side activity relayed from the SPA via POST /api/v1/logs/frontend
+    │   └── frontend-log-YYYYMMDD.txt
+    └── frontend-nginx/     <- raw Nginx access/error log for the frontend container
+        ├── access.log
+        └── error.log
+```
+
+Tail everything at once:
+```bash
+tail -f logs/backend/*.txt logs/jobs/*.txt logs/frontend/*.txt logs/frontend-nginx/*.log
+```
+
+Notes:
+- Backend/jobs/frontend `.txt` files rotate daily and are kept for 30 days (see `backend/src/lib/logger.ts`).
+- The frontend SPA reports every API call (success, HTTP error, and network failure) to `logs/frontend/`, tagged with level `INF`/`WRN`/`ERR` — this is genuine browser activity forwarded over the network, not just fatal errors.
+- `docker compose logs -f backend` / `frontend` still work as usual for live container stdout, in addition to these files.
+- If `./logs/` doesn't exist yet, Docker creates it automatically as `root`-owned on first `docker compose up`; adjust ownership (`sudo chown -R $USER ./logs`) if you need to read it as a non-root user.
+
 ## 8. Ongoing operations
-- `docker compose logs -f backend` — tail application logs (also written to the `backend_logs` volume, rotated daily via Winston).
+- `docker compose logs -f backend` — tail live container output (see §7b above for the persisted log files).
 - `docker compose exec backend npx prisma migrate deploy` — apply new migrations after a `git pull` + rebuild.
 - `docker compose up -d --build backend frontend` — redeploy after code changes.
 

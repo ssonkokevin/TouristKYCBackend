@@ -50,7 +50,11 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - backend_logs:/app/logs
+      # Bind mount (not a named volume) so logs land in a plain, browsable
+      # directory on the host: ./logs/{backend,jobs,frontend}/*.txt, sitting
+      # alongside the backend/ and frontend/ checkouts. Winston creates the
+      # backend/jobs/frontend subdirectories itself (see backend/src/lib/logger.ts).
+      - ./logs:/app/logs
     command: sh -c "npx prisma migrate deploy --schema=src/prisma/schema.prisma && node dist/server.js"
 
   frontend:
@@ -63,8 +67,11 @@ services:
       - backend
     ports:
       - "8900:8900"
+    volumes:
+      # Nginx access/error log for the frontend container, in the same
+      # shared ./logs directory (see frontend/nginx.conf for the log paths).
+      - ./logs/frontend-nginx:/var/log/kyc-frontend
 
 volumes:
   postgres_data:
   redis_data:
-  backend_logs:
