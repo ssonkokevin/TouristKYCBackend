@@ -68,7 +68,7 @@ export async function suspendSubscriber(
   });
 }
 
-export async function reactivateSubscriber(subscriberId: string) {
+export async function reactivateSubscriber(_subscriberId: string) {
   const error = new Error("Subscriber reactivation via BSAG is not yet implemented.");
   (error as any).statusCode = 501;
   throw error;
