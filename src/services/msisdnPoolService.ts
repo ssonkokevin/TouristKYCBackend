@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { auditLogger } from "../lib/logger.js";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   available: ["reserved"],
@@ -180,7 +181,7 @@ export async function releaseHeldMsisdn(id: string) {
     throw error;
   }
 
-  return prisma.msisdnPool.update({
+  const released = await prisma.msisdnPool.update({
     where: { id },
     data: {
       status: "available",
@@ -192,6 +193,15 @@ export async function releaseHeldMsisdn(id: string) {
       providerConfirmationRef: null,
     },
   });
+
+  auditLogger.info("Held MSISDN released back to pool", {
+    msisdnId: id,
+    msisdn: released.msisdn,
+    status: released.status,
+    reason: "held_release",
+  });
+
+  return released;
 }
 
 export async function listMsisdnPool(filters: {

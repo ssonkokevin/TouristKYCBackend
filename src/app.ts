@@ -48,13 +48,13 @@ app.use(
     credentials: true,
   })
 );
-app.use(requestLogger);
 // 40mb accommodates up to 4 base64-encoded document images (subscriber_photo,
 // passport_bio_page, visa_page, application_form) pushed inline on
 // POST /api/v1/subscribers — base64 inflates binary size by ~33%, and each
 // image is capped at 10mb pre-encoding (see subscribers.ts createSchema).
 app.use(express.json({ limit: "40mb" }));
 app.use(express.urlencoded({ extended: true, limit: "40mb" }));
+app.use(requestLogger);
 app.use("/uploads", express.static("uploads"));
 app.get("/api-docs.json", (_req, res) => res.json(swaggerSpec));
 app.get("/api-docs", (_req, res) => {

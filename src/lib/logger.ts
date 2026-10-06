@@ -65,3 +65,4 @@ function makeLogger(category: string, subdir: string) {
 export const backendLogger = makeLogger("BACKEND", "backend");
 export const jobsLogger = makeLogger("JOBS", "jobs");
 export const frontendLogger = makeLogger("FRONTEND", "frontend");
+export const auditLogger = makeLogger("AUDIT", "audit");

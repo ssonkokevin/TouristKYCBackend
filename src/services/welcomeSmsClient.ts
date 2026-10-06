@@ -1,5 +1,6 @@
 import axios from "axios";
 import { config } from "../config.js";
+import { auditLogger } from "../lib/logger.js";
 
 export interface WelcomeSmsPayload {
   phoneNumber: string;
@@ -26,9 +27,20 @@ export async function sendWelcomeSms(payload: WelcomeSmsPayload) {
     throw new Error("BSAG OAuth token response did not include access_token");
   }
 
+  auditLogger.info("Sending welcome SMS via BSAG", {
+    phoneNumber: payload.phoneNumber,
+    messagePreview: payload.message.slice(0, 160),
+  });
+
   const response = await axios.post(config.BSAG_SMS_ENDPOINT, payload, {
     headers: { Authorization: `Bearer ${accessToken}` },
     timeout: config.PROVIDER_TIMEOUT_MS,
+  });
+
+  auditLogger.info("Welcome SMS BSAG response received", {
+    phoneNumber: payload.phoneNumber,
+    status: response.status,
+    responseData: response.data,
   });
 
   return response.data;

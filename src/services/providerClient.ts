@@ -1,6 +1,7 @@
 import axios from "axios";
 import { config } from "../config.js";
 import { prisma } from "../lib/prisma.js";
+import { auditLogger } from "../lib/logger.js";
 
 export interface AssignmentPayload {
   subscriberId: string;
@@ -45,6 +46,18 @@ export async function notifyProviderAssignment(payload: AssignmentPayload) {
 
   const endpoint = `${config.PROVIDER_BASE_URL}${config.PROVIDER_ASSIGN_ENDPOINT}`;
 
+  auditLogger.info("Outbound provider assignment request", {
+    subscriberId: payload.subscriberId,
+    simInventoryId: payload.simInventoryId,
+    msisdnId: payload.msisdnId,
+    msisdn: msisdn.msisdn,
+    imsi: subscriber.simInventory.imsi,
+    iccid: subscriber.simInventory.iccid,
+    passportNumber: subscriber.passportNumber,
+    endpoint,
+    requestPayload,
+  });
+
   const syncLog = await prisma.providerSyncLog.create({
     data: {
       direction: "outbound",
@@ -69,6 +82,13 @@ export async function notifyProviderAssignment(payload: AssignmentPayload) {
         httpStatusCode: response.status,
         responsePayload: response.data as any,
       },
+    });
+
+    auditLogger.info("Outbound provider assignment response", {
+      subscriberId: payload.subscriberId,
+      msisdn: msisdn.msisdn,
+      status: response.status,
+      responseBody: response.data,
     });
 
     return { success: true, data: response.data };

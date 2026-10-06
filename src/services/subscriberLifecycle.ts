@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma.js";
+import { auditLogger } from "../lib/logger.js";
 import { emitSubscriberDeregistered } from "../sockets/index.js";
 import { suspendMsisdnWithProvider, terminateMsisdnWithProvider } from "./providerLifecycleClient.js";
 import { sendWelcomeSms } from "./welcomeSmsClient.js";
@@ -20,9 +21,26 @@ export async function suspendSubscriber(
     const msisdn = sub.msisdnPool[0]?.msisdn;
     if (!msisdn) throw new Error("Subscriber has no assigned MSISDN");
 
+    auditLogger.info("Attempting subscriber suspension via BSAG", {
+      subscriberId,
+      msisdn,
+      reason,
+      suspendedBy,
+      passportNumber: sub.passportNumber,
+      status: sub.status,
+    });
+
     await suspendMsisdnWithProvider(msisdn);
 
     await tx.subscriber.update({ where: { id: subscriberId }, data: { status: "suspended" } });
+
+    auditLogger.info("Subscriber suspended successfully", {
+      subscriberId,
+      msisdn,
+      reason,
+      suspendedBy,
+      passportNumber: sub.passportNumber,
+    });
 
     await tx.suspension.create({
       data: { subscriberId, reason, reasonNote, suspendedBy },
@@ -143,11 +161,27 @@ export async function deregisterFromSuspension(subscriberId: string) {
     const msisdn = sub.msisdnPool[0]?.msisdn;
     if (!msisdn) throw new Error("Subscriber has no assigned MSISDN");
 
+    auditLogger.info("Auto-deregistering suspended subscriber via BSAG", {
+      subscriberId,
+      msisdn,
+      reason: "visa_expired_deregistered",
+      operator: "System (auto)",
+      passportNumber: sub.passportNumber,
+    });
+
     await terminateMsisdnWithProvider(msisdn);
 
     await tx.subscriber.update({
       where: { id: subscriberId },
       data: { status: "deregistered", simInventoryId: null, msisdnId: null },
+    });
+
+    auditLogger.info("Auto-deregister complete", {
+      subscriberId,
+      msisdn,
+      reason: "visa_expired_deregistered",
+      operator: "System (auto)",
+      passportNumber: sub.passportNumber,
     });
 
     await tx.suspension.deleteMany({ where: { subscriberId } });
