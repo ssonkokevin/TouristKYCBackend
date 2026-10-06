@@ -69,26 +69,9 @@ export async function suspendSubscriber(
 }
 
 export async function reactivateSubscriber(subscriberId: string) {
-  return prisma.$transaction(async (tx) => {
-    const sub = await tx.subscriber.findUnique({
-      where: { id: subscriberId },
-      include: { simInventory: true, msisdnPool: { take: 1 } },
-    });
-    if (!sub) throw new Error("Subscriber not found");
-
-    await tx.subscriber.update({ where: { id: subscriberId }, data: { status: "active" } });
-    await tx.suspension.deleteMany({ where: { subscriberId } });
-
-    const msisdn = sub.msisdnPool[0];
-    if (msisdn) {
-      await tx.msisdnPool.update({ where: { id: msisdn.id }, data: { status: "active" } });
-    }
-    if (sub.simInventory) {
-      await tx.simInventory.update({ where: { id: sub.simInventory.id }, data: { status: "active" } });
-    }
-
-    return sub;
-  });
+  const error = new Error("Subscriber reactivation via BSAG is not yet implemented.");
+  (error as any).statusCode = 501;
+  throw error;
 }
 
 export async function deregisterSubscriber(

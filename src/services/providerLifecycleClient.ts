@@ -3,9 +3,24 @@ import { config } from "../config.js";
 import { auditLogger } from "../lib/logger.js";
 
 interface ProviderOperationResult {
-  retCode?: string;
+  retCode?: string | number;
   retMesg?: string;
   [key: string]: unknown;
+}
+
+function normalizeProviderPayload(data: unknown): ProviderOperationResult {
+  if (!data) return {};
+  if (typeof data === "string") {
+    try {
+      return normalizeProviderPayload(JSON.parse(data));
+    } catch {
+      return { retMesg: data };
+    }
+  }
+  if (typeof data === "object") {
+    return data as ProviderOperationResult;
+  }
+  return { retMesg: String(data) };
 }
 
 function getAccessToken() {
@@ -38,25 +53,55 @@ async function callProviderLifecycle(endpoint: string, msisdn: string): Promise<
     authScheme: "client_credentials",
   });
 
-  const response = await axios.post(endpoint, { msisdn }, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    timeout: config.PROVIDER_TIMEOUT_MS,
-  });
+  try {
+    const response = await axios.post(endpoint, { msisdn }, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      timeout: config.PROVIDER_TIMEOUT_MS,
+    });
 
-  const result = response.data as ProviderOperationResult;
-  auditLogger.info("BSAG lifecycle response received", {
-    endpoint,
-    msisdn,
-    retCode: result.retCode,
-    retMesg: result.retMesg,
-    status: response.status,
-  });
+    const result = normalizeProviderPayload(response.data);
+    const retCode = String(result.retCode ?? "").trim();
+    const retMesg = String(result.retMesg ?? "").trim();
 
-  if (result.retCode !== "000000") {
-    throw new Error(result.retMesg || `BSAG lifecycle operation failed with code ${result.retCode ?? "unknown"}`);
+    auditLogger.info("BSAG lifecycle response received", {
+      endpoint,
+      msisdn,
+      retCode,
+      retMesg,
+      status: response.status,
+      raw: response.data,
+    });
+
+    if (retCode !== "000000") {
+      throw new Error(
+        `BSAG lifecycle operation failed with code "${retCode || "unknown"}" message "${retMesg || "no message returned"}"`
+      );
+    }
+
+    return result;
+  } catch (error: any) {
+    if (axios.isAxiosError(error) && error.response) {
+      const payload = normalizeProviderPayload(error.response.data);
+      const retCode = String(payload.retCode ?? error.response.statusText ?? "").trim();
+      const retMesg = String(payload.retMesg ?? error.message ?? "").trim();
+      const raw = error.response.data;
+
+      auditLogger.error("BSAG lifecycle request failed", {
+        endpoint,
+        msisdn,
+        httpStatus: error.response.status,
+        retCode,
+        retMesg,
+        raw,
+      });
+
+      throw new Error(
+        `BSAG lifecycle operation failed with HTTP ${error.response.status}, code "${retCode || "unknown"}", message "${retMesg || "no message returned"}", raw=${JSON.stringify(raw)}`
+      );
+    }
+
+    throw error;
   }
-
-  return result;
 }
 
 export async function suspendMsisdnWithProvider(msisdn: string) {
