@@ -1,5 +1,8 @@
 import { prisma } from "../lib/prisma.js";
 import { emitSubscriberDeregistered } from "../sockets/index.js";
+import { suspendMsisdnWithProvider, terminateMsisdnWithProvider } from "./providerLifecycleClient.js";
+import { sendWelcomeSms } from "./welcomeSmsClient.js";
+import { buildSuspendedSms } from "./smsTemplates.js";
 
 export async function suspendSubscriber(
   subscriberId: string,
@@ -14,18 +17,33 @@ export async function suspendSubscriber(
     });
     if (!sub) throw new Error("Subscriber not found");
 
+    const msisdn = sub.msisdnPool[0]?.msisdn;
+    if (!msisdn) throw new Error("Subscriber has no assigned MSISDN");
+
+    await suspendMsisdnWithProvider(msisdn);
+
     await tx.subscriber.update({ where: { id: subscriberId }, data: { status: "suspended" } });
 
     await tx.suspension.create({
       data: { subscriberId, reason, reasonNote, suspendedBy },
     });
 
-    const msisdn = sub.msisdnPool[0];
-    if (msisdn) {
-      await tx.msisdnPool.update({ where: { id: msisdn.id }, data: { status: "suspended" } });
-    }
+    await tx.msisdnPool.update({ where: { id: sub.msisdnPool[0].id }, data: { status: "suspended" } });
     if (sub.simInventory) {
       await tx.simInventory.update({ where: { id: sub.simInventory.id }, data: { status: "suspended" } });
+    }
+
+    if (sub.msisdnPool[0]?.msisdn) {
+      try {
+        await sendWelcomeSms({
+          phoneNumber: sub.msisdnPool[0].msisdn,
+          message: buildSuspendedSms({ msisdn: sub.msisdnPool[0].msisdn }),
+        });
+      } catch (error) {
+        // Fail the local suspension only if the provider suspension fails.
+        // SMS delivery failure must not block the customer lifecycle.
+        console.error("Suspension SMS delivery failed", error);
+      }
     }
 
     return sub;
@@ -68,6 +86,11 @@ export async function deregisterSubscriber(
     });
     if (!sub) throw new Error("Subscriber not found");
 
+    const msisdn = sub.msisdnPool[0]?.msisdn;
+    if (!msisdn) throw new Error("Subscriber has no assigned MSISDN");
+
+    await terminateMsisdnWithProvider(msisdn);
+
     await tx.subscriber.update({
       where: { id: subscriberId },
       data: { status: "deregistered", simInventoryId: null, msisdnId: null },
@@ -76,12 +99,12 @@ export async function deregisterSubscriber(
     await tx.suspension.deleteMany({ where: { subscriberId } });
     await tx.deregistration.create({ data: { subscriberId, reason, reasonNote, operator } });
 
-    const msisdn = sub.msisdnPool[0];
-    if (msisdn) {
+    const msisdnRecord = sub.msisdnPool[0];
+    if (msisdnRecord) {
       await tx.msisdnPool.update({
-        where: { id: msisdn.id },
+        where: { id: msisdnRecord.id },
         data: {
-          status: "available",
+          status: "held",
           assignedSubscriberId: null,
           simInventoryId: null,
           reservedBy: null,
@@ -117,6 +140,11 @@ export async function deregisterFromSuspension(subscriberId: string) {
     });
     if (!sub) throw new Error("Subscriber not found");
 
+    const msisdn = sub.msisdnPool[0]?.msisdn;
+    if (!msisdn) throw new Error("Subscriber has no assigned MSISDN");
+
+    await terminateMsisdnWithProvider(msisdn);
+
     await tx.subscriber.update({
       where: { id: subscriberId },
       data: { status: "deregistered", simInventoryId: null, msisdnId: null },
@@ -127,12 +155,12 @@ export async function deregisterFromSuspension(subscriberId: string) {
       data: { subscriberId, reason: "visa_expired_deregistered", operator: "System (auto)" },
     });
 
-    const msisdn = sub.msisdnPool[0];
-    if (msisdn) {
+    const msisdnRecord = sub.msisdnPool[0];
+    if (msisdnRecord) {
       await tx.msisdnPool.update({
-        where: { id: msisdn.id },
+        where: { id: msisdnRecord.id },
         data: {
-          status: "available",
+          status: "held",
           assignedSubscriberId: null,
           simInventoryId: null,
           reservedBy: null,

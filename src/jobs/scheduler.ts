@@ -5,16 +5,18 @@ import releaseExpiredReservations from "./releaseExpiredReservations.js";
 import releaseOrphanedProvisioned from "./releaseOrphanedProvisioned.js";
 import suspendExpiredVisas from "./suspendExpiredVisas.js";
 import deregisterStaleSuspensions from "./deregisterStaleSuspensions.js";
+import releaseHeldMsisdns from "./releaseHeldMsisdns.js";
 import notifyExpiringVisas from "./notifyExpiringVisas.js";
 import reconcileStaleSyncs from "./reconcileStaleSyncs.js";
 
 const scheduler = new Queue("job-scheduler", { connection: redis as any });
 
-const TASKS: Record<string, () => Promise<void>> = {
+const TASKS: Record<string, () => Promise<unknown>> = {
   "release-expired-reservations": releaseExpiredReservations,
   "release-orphaned-provisioned": releaseOrphanedProvisioned,
   "suspend-expired-visas": suspendExpiredVisas,
   "deregister-stale-suspensions": deregisterStaleSuspensions,
+  "release-held-msisdns": releaseHeldMsisdns,
   "notify-expiring-visas": notifyExpiringVisas,
   "reconcile-stale-syncs": reconcileStaleSyncs,
 };
@@ -24,6 +26,7 @@ export function startJobSchedulers() {
   scheduler.add("release-orphaned-provisioned", {}, { repeat: { every: 300000 }, jobId: "release-orphaned-provisioned" });
   scheduler.add("suspend-expired-visas", {}, { repeat: { pattern: "0 2 * * *" }, jobId: "suspend-expired-visas" });
   scheduler.add("deregister-stale-suspensions", {}, { repeat: { pattern: "0 3 * * *" }, jobId: "deregister-stale-suspensions" });
+  scheduler.add("release-held-msisdns", {}, { repeat: { pattern: "0 4 * * *" }, jobId: "release-held-msisdns" });
   scheduler.add("notify-expiring-visas", {}, { repeat: { pattern: "0 6 * * *" }, jobId: "notify-expiring-visas" });
   scheduler.add("reconcile-stale-syncs", {}, { repeat: { every: 3600000 }, jobId: "reconcile-stale-syncs" });
 

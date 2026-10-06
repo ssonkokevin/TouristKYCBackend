@@ -6,6 +6,11 @@ vi.mock("../jobs/queue.js", () => ({
   queueSyncProviderAssignment: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../jobs/welcomeSmsQueue.js", () => ({
+  welcomeSmsQueue: {},
+  queueWelcomeSms: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../sockets/index.js", () => ({
   io: {},
   emitSubscriberRegistered: vi.fn(),
@@ -25,6 +30,7 @@ import {
 import {
   listAvailableMsisdn,
   provisionMsisdn,
+  releaseHeldMsisdn,
   releaseMsisdn,
   releaseOrphanedProvisionedResources as releaseOrphanedMsisdns,
 } from "./msisdnPoolService.js";
@@ -325,6 +331,60 @@ describe("EMRG resource API corrections", () => {
     const releasedMsisdn = await releaseMsisdn(msisdn.id);
     expect(releasedSim.status).toBe("available");
     expect(releasedMsisdn.status).toBe("available");
+  });
+
+  it("holds a deregistered MSISDN and releases it back to the pool only from held status", async () => {
+    const msisdn = await createMsisdn("H");
+    const sim = await createSim("H");
+    const sub = await createSubscriber({
+      surname: "Held",
+      other_names: "User",
+      nationality_code: NATIONALITY_CODE,
+      passport_number: makePassport("H"),
+      visa_expiry_date: new Date("2030-01-01"),
+      iccid: sim.iccid,
+      msisdn: msisdn.msisdn,
+    });
+
+    await prisma.msisdnPool.update({
+      where: { id: msisdn.id },
+      data: { status: "held", assignedSubscriberId: null, simInventoryId: null },
+    });
+
+    const available = await listAvailableMsisdn({ limit: 10, category: "test-emrg" });
+    expect(available.some((item) => item.msisdn === msisdn.msisdn)).toBe(false);
+
+    const released = await releaseHeldMsisdn(msisdn.id);
+    expect(released.status).toBe("available");
+    expect(released.assignedSubscriberId).toBeNull();
+    expect(released.simInventoryId).toBeNull();
+
+    await prisma.subscriber.update({
+      where: { id: sub.id },
+      data: { status: "deregistered" },
+    });
+
+    await expect(releaseHeldMsisdn(msisdn.id)).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("releases an MSISDN from held status only after the 90-day hold period", async () => {
+    const old = await createMsisdn("J");
+    const fresh = await createMsisdn("K");
+
+    await prisma.msisdnPool.updateMany({
+      where: { id: { in: [old.id, fresh.id] } },
+      data: { status: "held", updatedAt: new Date() },
+    });
+
+    await prisma.msisdnPool.update({
+      where: { id: old.id },
+      data: { updatedAt: new Date(Date.now() - 91 * 24 * 60 * 60 * 1000) },
+    });
+
+    const { released } = await import("./../jobs/releaseHeldMsisdns.js").then((m) => m.default());
+    expect(released).toBe(1);
+    expect((await prisma.msisdnPool.findUnique({ where: { id: old.id } }))?.status).toBe("available");
+    expect((await prisma.msisdnPool.findUnique({ where: { id: fresh.id } }))?.status).toBe("held");
   });
 
   it("releases orphaned provisioned resources", async () => {

@@ -457,7 +457,9 @@ const records: MockRecord[] = [
 async function main() {
   console.log("Seeding 50 mock subscriber records…");
 
+  let seq = 0;
   for (const r of records) {
+    seq += 1;
     const sub = await prisma.subscriber.create({
       data: {
         surname: r.surname,
@@ -476,6 +478,43 @@ async function main() {
         accommodation: r.accommodation,
         status: r.status,
       },
+    });
+
+    // Provision a demo SIM + MSISDN pair and link it to the subscriber, so the
+    // SIM Info tab has real MSISDN/ICCID/IMSI to display instead of blanks.
+    const imsi = `64104${String(100000 + seq).padStart(9, "0")}`;
+    const iccid = `8925610${String(400000 + seq).padStart(10, "0")}`;
+    const msisdn = `2567${String(10000000 + seq).slice(-8)}`;
+    const resourceStatus = r.status === "suspended" ? "suspended" : "assigned";
+
+    const sim = await prisma.simInventory.create({
+      data: {
+        imsi,
+        iccid,
+        type: "esim",
+        category: "tourist",
+        batchId: "SEED-DEMO-2026",
+        status: resourceStatus,
+        provisionedAt: r.arrivalDate,
+        providerConfirmationRef: `SEED-REF-${seq}`,
+      },
+    });
+
+    const msisdnRecord = await prisma.msisdnPool.create({
+      data: {
+        msisdn,
+        category: "tourist",
+        status: resourceStatus,
+        provisionedAt: r.arrivalDate,
+        providerConfirmationRef: `SEED-REF-${seq}`,
+        simInventoryId: sim.id,
+        assignedSubscriberId: sub.id,
+      },
+    });
+
+    await prisma.subscriber.update({
+      where: { id: sub.id },
+      data: { simInventoryId: sim.id, msisdnId: msisdnRecord.id },
     });
 
     // Create suspension record for already-suspended subscribers

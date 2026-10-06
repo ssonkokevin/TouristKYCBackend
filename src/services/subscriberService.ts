@@ -2,6 +2,7 @@ import { Prisma, DocumentType } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { emitSubscriberRegistered } from "../sockets/index.js";
 import { queueSyncProviderAssignment } from "../jobs/queue.js";
+import { queueWelcomeSms } from "../jobs/welcomeSmsQueue.js";
 import { config } from "../config.js";
 
 function mapSnakeToCamel(data: any) {
@@ -235,6 +236,11 @@ export async function createSubscriber(input: any) {
     simInventoryId: resolvedSimId,
     msisdnId: resolvedMsisdnId,
   });
+
+  await queueWelcomeSms(
+    { subscriberId: subscriber.id, phoneNumber: subscriber.msisdnPool?.[0]?.msisdn ?? msisdn },
+    config.WELCOME_SMS_DELAY_MINUTES * 60 * 1000
+  );
 
   return serializeSubscriber(subscriber, "queued");
 }

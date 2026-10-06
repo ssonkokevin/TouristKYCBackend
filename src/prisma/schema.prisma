@@ -29,6 +29,7 @@ enum MsisdnStatus {
   active
   suspended
   deactivated
+  held
 }
 
 enum SubscriberStatus {

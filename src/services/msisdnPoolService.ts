@@ -9,6 +9,7 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   active: ["suspended", "deactivated", "available"],
   suspended: ["active", "deactivated", "available"],
   deactivated: ["available"],
+  held: ["available"],
 };
 
 export interface AvailableFilters {
@@ -147,6 +148,33 @@ export async function releaseMsisdn(id: string) {
     throw error;
   }
   if (item.status !== "provisioned" && item.status !== "reserved") {
+    const error = new Error(`Cannot release MSISDN from status '${item.status}'`);
+    (error as any).statusCode = 409;
+    throw error;
+  }
+
+  return prisma.msisdnPool.update({
+    where: { id },
+    data: {
+      status: "available",
+      reservedBy: null,
+      reservedAt: null,
+      reservationExpiresAt: null,
+      simInventoryId: null,
+      assignedSubscriberId: null,
+      providerConfirmationRef: null,
+    },
+  });
+}
+
+export async function releaseHeldMsisdn(id: string) {
+  const item = await prisma.msisdnPool.findUnique({ where: { id } });
+  if (!item) {
+    const error = new Error("MSISDN not found");
+    (error as any).statusCode = 404;
+    throw error;
+  }
+  if (item.status !== "held") {
     const error = new Error(`Cannot release MSISDN from status '${item.status}'`);
     (error as any).statusCode = 409;
     throw error;

@@ -6,6 +6,7 @@ import {
   getMsisdnPool,
   importMsisdnPool,
   getMsisdnPoolSummary,
+  releaseHeldMsisdn,
 } from "../services/msisdnPoolService.js";
 
 export const msisdnPoolRouter = Router();
@@ -39,6 +40,15 @@ msisdnPoolRouter.get("/summary", async (_req, res, next) => {
   }
 });
 
+msisdnPoolRouter.post("/import", async (req, res, next) => {
+  try {
+    const result = await importMsisdnPool(req.body);
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 msisdnPoolRouter.get("/:id", async (req, res, next) => {
   try {
     const item = await getMsisdnPool(req.params.id);
@@ -48,10 +58,10 @@ msisdnPoolRouter.get("/:id", async (req, res, next) => {
   }
 });
 
-msisdnPoolRouter.post("/import", async (req, res, next) => {
+msisdnPoolRouter.post("/:id/release-held", async (req, res, next) => {
   try {
-    const result = await importMsisdnPool(req.body);
-    res.status(201).json(result);
+    const item = await releaseHeldMsisdn(req.params.id);
+    res.json({ data: item });
   } catch (err) {
     next(err);
   }
